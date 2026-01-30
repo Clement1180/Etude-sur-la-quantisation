@@ -14,6 +14,15 @@ class AffineQuantizer:
         self.scale = (np.max(x)-np.min(x))/(self.q_max - self.q_min + self.epsilon)
         self.z = self.q_min - np.min(x)/self.scale
         self.z = np.clip(np.round(self.z), self.q_min, self.q_max)
+
+    def Calibration_percentile(self,x):
+        x_max = np.percentile(x,95)
+        x_min = np.percentile(x,5.0)
+        self.scale = (x_max-x_min)/(self.q_max - self.q_min + self.epsilon)
+        self.z = self.q_min - x_min/self.scale
+        self.z = np.clip(np.round(self.z), self.q_min, self.q_max)
+
+
     def Quantize(self,x):
         q = np.round(x/self.scale + self.z)
         q = np.clip(q, self.q_min, self.q_max)
@@ -25,6 +34,12 @@ class AffineQuantizer:
 
     def forward(self,x):
         self.Calibration(x)
+        q = self.Quantize(x)
+        x_rec = self.Dequantize(q)
+        return x_rec
+    
+    def forward_percentile(self,x):
+        self.Calibration_percentile(x)
         q = self.Quantize(x)
         x_rec = self.Dequantize(q)
         return x_rec
@@ -56,4 +71,19 @@ print(f"Moyenne: {real_weights.mean():.4f}, Std: {real_weights.std():.4f}")
 
 x_rec = quantiser.forward(real_weights)
 MSE = np.mean((real_weights - x_rec)**2)
-print(f"MSE sur les poids du ResNet: {MSE}")
+print(f"MSE sur les poids du ResNet sans utilisation de la distribution: {MSE}")
+
+
+''' test sur resnet en utilisant la distribution pour éliminer les outlayers'''
+
+weights_list = []
+for param in model.parameters():
+    weights_list.append(param.detach().cpu().numpy().flatten())
+real_weights = np.concatenate(weights_list)
+
+
+
+
+x_rec = quantiser.forward_percentile(real_weights)
+MSE = np.mean((real_weights - x_rec)**2)
+print(f"MSE sur les poids du ResNet avec utilisation de la distribution: {MSE}")
